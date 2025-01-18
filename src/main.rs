@@ -30,6 +30,22 @@ fn generate_short_url() -> String {
         .collect()
 }
 
+// Initialize database and create table if not exists
+fn init_db() -> Connection {
+    let conn = Connection::open("urls.db").expect("Failed to open database");
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS urls (
+            id INTEGER PRIMARY KEY,
+            short TEXT NOT NULL,
+            long TEXT NOT NULL,
+            expires_at TEXT
+        )",
+        params![],
+    )
+    .expect("Failed to create table");
+    conn
+}
+
 // Shorten URL Handler
 async fn shorten_url(data: web::Data<AppState>, req: web::Json<UrlRequest>) -> impl Responder {
     let short_code = generate_short_url();
@@ -47,13 +63,16 @@ async fn shorten_url(data: web::Data<AppState>, req: web::Json<UrlRequest>) -> i
 
     match result {
         Ok(_) => HttpResponse::Ok().json(ShortenedUrl {
-            short_url: format!("http://localhost:8080/{}", short_code),
+            short_url: format!("http://localhost:8081/{}", short_code),
         }),
-        Err(_) => HttpResponse::InternalServerError().body("Error storing URL"),
+        Err(err) => {
+            eprintln!("Error storing URL: {:?}", err); // Log the error for debugging
+            HttpResponse::InternalServerError().body("Error storing URL")
+        }
     }
 }
 
-// Redirect to Original URL
+// Redirect to Original URL Handler
 async fn redirect_url(data: web::Data<AppState>, short_code: web::Path<String>) -> impl Responder {
     let conn = data.db.lock().unwrap();
     let mut stmt = conn
@@ -90,25 +109,27 @@ fn delete_expired_links(conn: &Connection) {
     conn.execute("DELETE FROM urls WHERE expires_at < datetime('now')", [])
         .unwrap();
 }
+
 // Start the Server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let db_clone = Connection::open("urls.db").expect("Failed to open database");
+    let conn = init_db(); // Initialize the DB and create table
     task::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await; // Runs every hour
-            delete_expired_links(&db_clone);
+            delete_expired_links(&conn);
         }
     });
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState {
-                db: Mutex::new(Connection::open("urls.db").expect("Failed to open database")),
+                db: Mutex::new(init_db()), // Initialize a new DB connection per request
             }))
             .route("/", web::post().to(shorten_url))
             .route("/{short_code}", web::get().to(redirect_url))
     })
-    .bind("127.0.0.1:8080")?
+    .bind("0.0.0.0:8081")?
     .run()
     .await
 }

@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  url-shortener:
+    build: .
+    ports:
+      - "8081:8081"  # Change the port mapping to 8081
+    volumes:
+      - .:/usr/src/app  # Bind mount source code directory
+      - ./urls.db:/usr/src/app/urls.db  # Mount the SQLite3 database file
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
