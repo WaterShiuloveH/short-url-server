@@ -4,7 +4,6 @@ use rand::{distributions::Alphanumeric, Rng};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use std::thread;
 use tokio::task;
 
 struct AppState {
@@ -97,7 +96,7 @@ async fn main() -> std::io::Result<()> {
     let db_clone = Connection::open("urls.db").expect("Failed to open database");
     task::spawn(async move {
         loop {
-            thread::sleep(std::time::Duration::from_secs(3600)); // Runs every hour
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await; // Runs every hour
             delete_expired_links(&db_clone);
         }
     });
